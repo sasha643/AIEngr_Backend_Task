@@ -1,5 +1,6 @@
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate
+from django.contrib.auth.hashers import check_password
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -110,6 +111,7 @@ class LoginView(APIView):
             password = serializer.validated_data["password"]
 
             user = authenticate(request, username=email, password=password)
+            print(user)
             if user:
                 auth_token = jwt.encode({"user_id": user.id}, SECRET_KEY, algorithm="HS256")
 
