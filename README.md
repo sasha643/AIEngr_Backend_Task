@@ -7,8 +7,9 @@ Ensure you have the following installed:
 - pip (Python package manager)
 - virtualenv
 
+# Clone the repository  
+
 ```bash
-# Clone the repository
 git clone https://github.com/sasha643/AIEngr_Backend_Task.git
 cd AIEngr_Backend
 ```
