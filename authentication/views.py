@@ -1,6 +1,6 @@
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import make_password, check_password
 from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -8,9 +8,9 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.authentication import SessionAuthentication
 
 from drf_spectacular.utils import extend_schema
+from backend.authentication import CookieJWTAuthentication
 from .models import User
 from .serializers import RegisterUserSerializer, VerifyOTPSerializer, LoginUserSerializer
 from backend import settings
@@ -50,7 +50,7 @@ class RegisterView(APIView):
 
             user = User.objects.create(
                 email=email,
-                password=password, 
+                password=make_password(password), 
                 otp=otp,
                 is_verified=False
             )
@@ -110,18 +110,21 @@ class LoginView(APIView):
             email = serializer.validated_data["email"]
             password = serializer.validated_data["password"]
 
-            user = authenticate(request, username=email, password=password)
-            print(user)
-            if user:
-                auth_token = jwt.encode({"user_id": user.id}, SECRET_KEY, algorithm="HS256")
+            try:
+                user = User.objects.get(email=email) 
+            except User.DoesNotExist:
+                return Response({"error": "Invalid credentials"}, status=401)
 
-                response = Response({"message": "Login successful."}, status=200)
-                response.set_cookie(
-                    "auth_token", auth_token, httponly=True, secure=True, samesite="Lax"
-                )
-                return response
+            if not check_password(password, user.password):
+                return Response({"error": "Invalid credentials"}, status=401)
 
-            return Response({"error": "Invalid credentials"}, status=401)
+            auth_token = jwt.encode({"user_id": user.id}, SECRET_KEY, algorithm="HS256")
+
+            response = Response({"message": "Login successful."}, status=200)
+            response.set_cookie(
+                "auth_token", auth_token, httponly=True, secure=True, samesite="Lax"
+            )
+            return response
 
         return Response(serializer.errors, status=400)
 
@@ -135,7 +138,7 @@ class LogoutView(APIView):
 
 
 class UserDetailsView(APIView):
-    authentication_classes = [SessionAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     @extend_schema(responses={200: {"email": "string"}})
