@@ -50,3 +50,15 @@ Create a .env file in the project root with the following values:
 ```bash
 python manage.py runserver
 ```
+
+## Access the swagger API Documentation
+
+Open the browser and go to:
+
+```bash
+http://127.0.0.1:8000/swagger/
+```
+
+## Optimization
+
+The register user endpoint is taking a long since the email delivery part is being executed. However, in production this task can be handled in the background using celery (.apply).
