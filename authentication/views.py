@@ -46,6 +46,14 @@ class RegisterView(APIView):
                 return Response({"error": "Email already registered"}, status=400)
 
             otp = random.randint(100000, 999999)
+
+            user = User.objects.create(
+                email=email,
+                password=password, 
+                otp=otp,
+                is_verified=False
+            )
+
             send_mail(
                 subject="Email Verification",
                 message=f"Your OTP for verification is: {otp}",
@@ -54,37 +62,41 @@ class RegisterView(APIView):
                 fail_silently=True,
             )
 
-            request.session["otp"] = otp
-            request.session["email"] = email
-            request.session["password"] = password
-
             return Response({"message": "OTP sent to your email."}, status=200)
 
         return Response(serializer.errors, status=400)
-
+    
 
 class VerifyOTPView(APIView):
     @extend_schema(
         request=VerifyOTPSerializer,
-        responses={201: {"message": "User Verified successfully."}}
+        responses={200: {"message": "User verified successfully."}, 400: {"error": "Invalid OTP"}}
     )
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
         if serializer.is_valid():
-            otp = serializer.validated_data["otp"]
+            email = serializer.validated_data["email"]
+            otp_entered = serializer.validated_data["otp"]
 
-            if str(otp) == str(request.session.get("otp")):
-                user = User.objects.create_user(
-                    username=request.session.get("email"),
-                    email=request.session.get("email"),
-                    password=request.session.get("password"),
-                )
-                return Response({"message": "User Verified successfully."}, status=201)
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({"error": "User not found"}, status=404)
+
+            if user.is_verified:
+                return Response({"message": "User already verified. Please log in."}, status=200)
+
+            if str(user.otp) == str(otp_entered):
+                user.is_verified = True
+                user.otp = None
+                user.save()
+
+                return Response({"message": "User verified successfully."}, status=200)
 
             return Response({"error": "Invalid OTP"}, status=400)
 
         return Response(serializer.errors, status=400)
-
+    
 
 class LoginView(APIView):
     @extend_schema(
