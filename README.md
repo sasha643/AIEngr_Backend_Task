@@ -6,14 +6,12 @@ Ensure you have the following installed:
 - Python (>=3.10)
 - pip (Python package manager)
 - virtualenv
-- Docker & Docker Compose (for containerized setup)
-
----
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/AIEngr_Backend.git
+git clone https://github.com/sasha643/AIEngr_Backend_Task.git
 cd AIEngr_Backend
+```
 
 # Create a virtual environment
 python -m venv venv
