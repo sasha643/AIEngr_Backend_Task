@@ -3,9 +3,12 @@ import random
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
-from .serializers import RegisterSerializer
+from .serializers import *
 from .models import User
 from backend import settings
+
+
+
 
 class RegisterView(APIView):
     def post(self, request):
@@ -27,3 +30,21 @@ class RegisterView(APIView):
 
             return Response({'message': 'OTP sent to your email for verification'}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+class VerifyOTPView(APIView):
+    def post(self, request):
+        serializer = OTPVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                user = User.objects.get(email=serializer.validated_data['email'])
+                if user.otp == serializer.validated_data['otp']:
+                    user.is_verified = True
+                    user.otp = None
+                    user.save()
+                    return Response({'message': 'User verified'}, status=status.HTTP_200_OK)
+                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
