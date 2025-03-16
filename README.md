@@ -48,5 +48,5 @@ Create a .env file in the project root with the following values:
 ## Run the Django development server
 
 ```bash
-python manage.py runserver 0.0.0.0:8000
+python manage.py runserver
 ```
