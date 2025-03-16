@@ -14,9 +14,12 @@ from .models import User
 from .serializers import RegisterUserSerializer, VerifyOTPSerializer, LoginUserSerializer
 from backend import settings
 
+from dotenv import load_dotenv
 import jwt
 import os
 import random
+
+load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
