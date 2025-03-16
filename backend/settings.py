@@ -43,7 +43,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "authentication",
-    "drf_yasg",
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
     "corsheaders"
 ]
 
@@ -60,6 +61,8 @@ MIDDLEWARE = [
 ROOT_URLCONF = "backend.urls"
 
 AUTH_USER_MODEL = 'authentication.User'
+
+CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000"]
 
 TEMPLATES = [
     {
@@ -80,12 +83,10 @@ TEMPLATES = [
 WSGI_APPLICATION = "backend.wsgi.application"
 
 SWAGGER_SETTINGS = {
-    'USE_SESSION_AUTH': True, 
+    'USE_SESSION_AUTH': False,
     'SECURITY_DEFINITIONS': {
-        'basic': {
-            'type': 'basic'
-        }
-    },
+        'csrfToken': {'type': 'apiKey', 'in': 'cookie', 'name': 'csrftoken'}
+    }
 }
 
 # Database
@@ -101,7 +102,8 @@ DATABASES = {
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.SessionAuthentication',
-    )
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # Password validation

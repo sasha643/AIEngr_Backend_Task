@@ -1,80 +1,133 @@
 from django.core.mail import send_mail
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate
+from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
 
+from drf_spectacular.utils import extend_schema
 from .models import User
-from .serializers import *
+from .serializers import RegisterUserSerializer, VerifyOTPSerializer, LoginUserSerializer
 from backend import settings
 
+import jwt
+import os
 import random
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class GetCSRFToken(APIView):
+    @extend_schema(responses={200: {"csrfToken": "string"}})
+    def get(self, request):
+        return Response({"csrfToken": get_token(request)})
 
 
 class RegisterView(APIView):
+    @extend_schema(
+        request=RegisterUserSerializer,
+        responses={200: {"message": "OTP sent to your email."}}
+    )
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
+        serializer = RegisterUserSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.save()
-            user.is_verified = False
-            otp = str(random.randint(100000, 999999))
-            user.otp = otp
-            user.save()
+            email = serializer.validated_data["email"]
+            password = serializer.validated_data["password"]
 
+            if User.objects.filter(email=email).exists():
+                return Response({"error": "Email already registered"}, status=400)
+
+            otp = random.randint(100000, 999999)
             send_mail(
                 subject="Email Verification",
                 message=f"Your OTP for verification is: {otp}",
-                from_email=settings.EMAIL_HOST_USER, 
-                recipient_list=[user.email],
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[email],
                 fail_silently=True,
             )
 
-            return Response({'message': 'OTP sent to your email for verification'}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-      
+            request.session["otp"] = otp
+            request.session["email"] = email
+            request.session["password"] = password
+
+            return Response({"message": "OTP sent to your email."}, status=200)
+
+        return Response(serializer.errors, status=400)
+
+
 class VerifyOTPView(APIView):
+    @extend_schema(
+        request=VerifyOTPSerializer,
+        responses={201: {"message": "User Verified successfully."}}
+    )
     def post(self, request):
-        serializer = OTPVerificationSerializer(data=request.data)
+        serializer = VerifyOTPSerializer(data=request.data)
         if serializer.is_valid():
-            try:
-                user = User.objects.get(email=serializer.validated_data['email'])
-                if user.otp == serializer.validated_data['otp']:
-                    user.is_verified = True
-                    user.otp = None
-                    user.save()
-                    return Response({'message': 'User verified'}, status=status.HTTP_200_OK)
-                return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
-            except User.DoesNotExist:
-                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+            otp = serializer.validated_data["otp"]
+
+            if str(otp) == str(request.session.get("otp")):
+                user = User.objects.create_user(
+                    username=request.session.get("email"),
+                    email=request.session.get("email"),
+                    password=request.session.get("password"),
+                )
+                return Response({"message": "User Verified successfully."}, status=201)
+
+            return Response({"error": "Invalid OTP"}, status=400)
+
+        return Response(serializer.errors, status=400)
+
+
 class LoginView(APIView):
+    @extend_schema(
+        request=LoginUserSerializer,
+        responses={200: {"message": "Login successful."}}
+    )
     def post(self, request):
-        serializer = LoginSerializer(data=request.data)
+        serializer = LoginUserSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email']
-            password = serializer.validated_data['password']
-            user = authenticate(email=email, password=password)
-            if user and user.is_verified:
-                login(request, user)
-                response = Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
-                response.set_cookie('auth_token', 'sessionid', httponly=True, secure=True)
+            email = serializer.validated_data["email"]
+            password = serializer.validated_data["password"]
+
+            user = authenticate(request, username=email, password=password)
+            if user:
+                auth_token = jwt.encode({"user_id": user.id}, SECRET_KEY, algorithm="HS256")
+
+                response = Response({"message": "Login successful."}, status=200)
+                response.set_cookie(
+                    "auth_token", auth_token, httponly=True, secure=True, samesite="Lax"
+                )
                 return response
-            return Response({'error': 'Invalid credentials or user not verified'}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({"error": "Invalid credentials"}, status=401)
+
+        return Response(serializer.errors, status=400)
+
 
 class LogoutView(APIView):
+    @extend_schema(responses={200: {"message": "Logout successful."}})
     def post(self, request):
-        logout(request)
-        response = Response({'message': 'Logged out'}, status=status.HTTP_200_OK)
-        response.delete_cookie('auth_token')
+        response = Response({"message": "Logout successful."})
+        response.delete_cookie("auth_token")
         return response
 
+
 class UserDetailsView(APIView):
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses={200: {"email": "string"}})
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        auth_token = request.COOKIES.get("auth_token")
+        if not auth_token:
+            return Response({"error": "Not authenticated"}, status=401)
+
+        payload = jwt.decode(auth_token, SECRET_KEY, algorithms=["HS256"])
+        user = User.objects.get(id=payload["user_id"])
+
+        return Response({"email": user.email, "is_verified":user.is_verified})
